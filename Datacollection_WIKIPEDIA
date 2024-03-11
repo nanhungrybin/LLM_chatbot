@@ -1,0 +1,67 @@
+import requests
+import json
+import os
+from datetime import datetime
+
+def get_wikipedia_summary(keyword, user_agent, language='en'):
+    # User-Agent 설정
+    headers = {
+        'user_agent' : user_agent
+    }
+
+    # 위키피디아 API 엔드포인트 구성
+    url = f"https://{language}.wikipedia.org/api/rest_v1/page/summary/{keyword}"
+
+    # HTTP GET 요청
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+
+        # 메타데이터 생성
+        metadata = {
+            "Topic": data['title'],
+            "Source URL": data['content_urls']['desktop']['page'],
+            "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Language": language
+        }
+
+        # 결과 데이터와 메타데이터를 포함한 딕셔너리 생성
+        result = {
+            "Content": data.get('extract', ''),
+            "Metadata": metadata
+        }
+
+        return result
+    else:
+        return {"Error": "Page not found or other error occurred"}
+
+def save_data_to_json(data, directory, filename):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    filepath = os.path.join(directory, filename)
+    with open(filepath, 'w', encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    print(f"Data saved in {filepath}")
+
+if __name__ == "__main__":
+    
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    
+    languages = {"Korean": "ko", "English": "en"}
+    language_label = "Korean"  # Or "English"
+    language = languages[language_label]
+
+    TopicKeywords = {
+        "Korean": ["사출성형", "용접", "단조", "프레스"],
+        "English": ["Injection Molding", "Welding", "Forging", "Pressing"]
+    }
+
+    selected_keywords = TopicKeywords[language_label]
+
+    for keyword in selected_keywords:
+        data = get_wikipedia_summary(keyword, language)
+        directory = os.path.join(language_label, keyword.replace(" ", "_"))  # Replace spaces with underscores for directory names
+        filename = f"{keyword}_wikipedia_summary.json"
+        save_data_to_json(data, directory, filename)

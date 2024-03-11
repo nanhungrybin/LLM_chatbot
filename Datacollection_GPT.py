@@ -87,105 +87,57 @@ def generate_detail_contents(contents, chatmodel, detailcontents, language="Kore
         System_role, prompt = create_DetailQuestion_with_keyword(answer,keyword)  # 컨텐츠에서 질문 생성 사용할 프롬프트 생성
         Q_text = generate_response(System_role, prompt, chatmodel,language="Korean")  # 프롬프트로 질문 생성
         
-        Q_contents = generate_response(System_role, Q_text, chatmodel,language="Korean")
-        detailcontents.append({"Question": Q_text, "Answer": Q_contents})
+        detailcontents = generate_contents(Q_text, chatmodel, detailcontents, language="Korean")
+        
     return detailcontents
     
-    
-    
+        
+def save_json_file(directory, file_name, data):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    file_path = os.path.join(directory, file_name)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    print(f"File saved: {file_path}")
+
 if __name__ == "__main__":
 
     """ Config """
-    OPENAI_API_KEY = "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"
-    #"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"
- 
-    os.environ["OPENAI_API_KEY"]=OPENAI_API_KEY
+    OPENAI_API_KEY = "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"
+    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
     
-    chatmodel = "gpt-3.5-turbo-1106" # 향상된 최신 GPT-3.5 Turbo 모델. 최대 4,096개의 출력 토큰을 반환
-    
-    language = "Korean"  # Choose between "korean" and "english"
-    
-    # Keywords dictionary
-    
+    chat_model = "gpt-3.5-turbo-1106"
+    language = "Korean"
+
     TopicKeywords = {
-        "Korean": {
-            "사출성형": "Injection Molding",
-            "용접": "Welding",
-            "단조": "Forging",
-            "프레스": "Pressing"
-        },
-        "English": {
-            "Injection Molding": "사출성형",
-            "Welding": "용접",
-            "Forging": "단조",
-            "Pressing": "프레스"
-        }
-        }
-    
-    Topickeyword = {"사출성형", "용접","단조","프레스" }
+        "Korean": ["사출성형", "용접", "단조", "프레스"],
+        "English": ["Injection Molding", "Welding", "Forging", "Pressing"]
+    }
 
+    selected_keywords = TopicKeywords["Korean"] if language == "Korean" else TopicKeywords["English"]
+    
+    for keyword in selected_keywords:
+        
+        contents = []
+        detail_contents = []
 
-    contents = []
-    Q_contents = []
-    
-    detailcontents = []
-    
-    # 언어 선택
-    if language == "Korean":
-        keywords = TopicKeywords["Korean"]
-    elif language == "English":
-        keywords = TopicKeywords["English"].values() 
-    else:
-        print("Unsupported language. Please select either Korean or English.")
-        exit()  
-
-    for keyword in keywords:
-    
         """ main """
         System_role, prompt = create_prompt_with_keyword(keyword)
-        response_text = generate_response(System_role, prompt, chatmodel, language="Korean")
-        contents = generate_contents(response_text, chatmodel, contents, language="Korean")
+        response_text = generate_response(System_role, prompt, chat_model, language=language)
+        contents = generate_contents(response_text, chat_model, contents, language=language)
         
-        Q_contents = generate_detail_contents(contents, chatmodel, detailcontents, language="Korean")
+        detail_contents = generate_detail_contents(contents, chat_model, detail_contents, language=language)
         
-        # 디렉토리 설정
-        date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        directory_name = f"{keyword}"
-        file_name = f"QA_{keyword}_{chatmodel}_{language}_{date}.json"
-
-        if not os.path.exists(directory_name):
-            os.makedirs(directory_name)
-        
-
         response_dict = {
+            "keyword": keyword,
             "contents": contents,
-            "source" : chatmodel,
-            "date": date,
+            "source": chat_model,
+            "date": datetime.now().strftime("%Y-%m-%d %H_%M_%S"),
             "language": language
         }
         
-        # path to save the file
-        file_path = os.path.join(directory_name, file_name)
-
-        # JSON으로 직렬화
-        with open(file_path, 'w', encoding='utf-8') as file:
-            json.dump(response_dict, file, ensure_ascii=False, indent=4)
-
-        # 각 컨텐츠 별로 세부 질문 생성 및 JSON 파일 저장
-        for i, content in enumerate(contents):
-            
-            detail_Q_response_dict = {
-                "contents": detailcontents, # 다른점
-                "source": chatmodel,
-                "date": date,
-                "language": language
-            }
- 
-                
-            # JSON으로 직렬화
-            with open(file_path, 'w', encoding='utf-8') as file:
-                json.dump(response_dict, file, ensure_ascii=False, indent=4)
-
-        print("Detail JSON files have been created.")
-        
- 
+        directory_name = f"output/{keyword}"
+        file_name = f"QnA_{keyword}_{chat_model}_{language}_{datetime.now().strftime('%Y-%m-%d_%H_%M_%S')}.json"
+        save_json_file(directory_name, file_name, response_dict)
+    
+    print("All keyword processing completed.")

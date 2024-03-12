@@ -1,34 +1,52 @@
-import requests
-from bs4 import BeautifulSoup
-import json
+"""https://github.com/martin-majlis/Wikipedia-API/tree/master"""
 import os
 from datetime import datetime
 from urllib.parse import quote
+import openai
+import wikipediaapi
+import json
 
-def get_wikipedia_content(keyword, user_agent, language='ko'):
+def is_english(text):
+    try:
+        text.encode(encoding='utf-8').decode('ascii')
+    except UnicodeDecodeError:
+        return False
+    else:
+        return True
+
+def translate_to_korean(text, chatmodel):
+    response = openai.chat.completions.create(
+        model=chatmodel,
+        messages=[
+            {"role": "system", "content": "Translate the following English text to Korean:"},
+            {"role": "user", "content": text}
+        ]
+    )
+    response_text = response.choices[0].message.content
+
+    return response_text
+
+def get_wikipedia_content(keyword, language):
     encoded_keyword = quote(keyword)
     url = f"https://{language}.wikipedia.org/wiki/{encoded_keyword}"
-    headers = {'User-Agent': user_agent}
+    
+    wiki_wiki = wikipediaapi.Wikipedia(
+    user_agent='MyProjectName (merlin@example.com)',
+        language='en',
+        extract_format=wikipediaapi.ExtractFormat.WIKI
+    )
 
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
+    p_wiki = wiki_wiki.page(keyword)
+    text_content = p_wiki.text
 
-        # HTML에서 텍스트 콘텐츠 추출
-        # 'mw-parser-output' 클래스는 위키피디아 페이지의 본문 콘텐츠를 포함하고 있음
-        content_div = soup.find('div', class_='mw-parser-output')
-        paragraphs = content_div.find_all('p')
-        text_content = ' '.join([paragraph.get_text() for paragraph in paragraphs])
-
-        # 메타데이터 생성
+    if text_content:
         metadata = {
             "Topic": keyword,
-            "Source URL": url,
+            "Source URL": p_wiki.fullurl,
             "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "Language": language
         }
 
-        # 결과 데이터와 메타데이터를 포함한 딕셔너리 생성
         result = {
             "Content": text_content,
             "Metadata": metadata
@@ -37,7 +55,6 @@ def get_wikipedia_content(keyword, user_agent, language='ko'):
         return result
     else:
         return {"Error": "Page not found or other error occurred"}
-
 
 def save_data_to_json(data, directory, filename):
     if not os.path.exists(directory):
@@ -48,24 +65,40 @@ def save_data_to_json(data, directory, filename):
         json.dump(data, f, ensure_ascii=False, indent=4)
     print(f"Data saved in {filepath}")
 
-
 if __name__ == "__main__":
-    
-    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     language_names = {"ko": "Korean", "en": "English"}
     languages = {"Korean": "ko", "English": "en"}
-    language_label = "Korean"  # Or "English"
-    language = languages[language_label]
+
+    language_label = "English"
 
     TopicKeywords = {
-        "Korean": ["사출성형", "용접", "단조", "프레스"],
-        "English": ["Injection Molding", "Welding", "Forging", "Pressing"]
+        "Korean": ["사출성형"],
+        "English": ["Injection Molding"]
     }
 
     selected_keywords = TopicKeywords[language_label]
 
+    
+    OPENAI_API_KEY = "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"
+    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+    chatmodel = "gpt-3.5-turbo"
+
     for keyword in selected_keywords:
-        data = get_wikipedia_content(keyword, language)
-        directory = os.path.join(language_label, keyword.replace(" ", "_"))  # Replace spaces with underscores for directory names
-        filename = f"{keyword}_wikipedia_ALLcontents.json"
-        save_data_to_json(data, directory, filename)
+        # Determine if the keyword is in English
+        if is_english(keyword):
+            data = get_wikipedia_content(keyword, languages["English"])
+            # Translate to Korean if the content is originally in English
+            if "Error" not in data:
+                translated_content = translate_to_korean(data['Content'], chatmodel)
+                data['Content'] = translated_content  # Translate
+                data['Metadata']['Language'] = "ko"  # Update language in metadata
+        else:
+            # If the keyword is already in Korean, fetch the content without translating
+            data = get_wikipedia_content(keyword, languages["Korean"])
+
+        if "Error" not in data:
+            directory = os.path.join("Wikipedia_Content", keyword.replace(" ", "_"))
+            filename = f"{keyword}_wikipedia_content.json"
+            save_data_to_json(data, directory, filename)
+        else:
+            print(f"Failed to retrieve content for {keyword}")

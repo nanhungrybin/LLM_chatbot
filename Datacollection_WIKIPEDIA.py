@@ -6,6 +6,8 @@ import openai
 import uuid
 import wikipediaapi
 import json
+import Credential
+import Model
 
 def is_english(text):
     """
@@ -21,8 +23,59 @@ def is_english(text):
         return False
     else:
         return True
+    
+def chunk_text(text, chunk_size = 500):
+    """
+    Description: 주어진 텍스트를 지정된 크기의 청크로 나눕니다.
+    Argument:
+    - text (str): 청킹할 텍스트
+    - chunk_size (int): 각 청크의 최대 문자 수
+    Return:
+    - list of str: 청크로 나눠진 텍스트 리스트
+    """    
+    sentences = text.split('. ')
+    current_chunk = ""
+    chunks = []
+    
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) > chunk_size : # 나눌 수 있다면
+            chunks.append(current_chunk)
+            current_chunk = sentence
+        else:
+            current_chunk += sentence + '. ' # 나눌 수 없다면
+    
+    chunks.append(current_chunk) # 마지막 청크 추가
+    
+    return chunks
+
+
+def translate_chunks(chunks, chatmodel):
+    """
+    Description: 텍스트 청크 리스트를 번역합니다.
+    Argument:
+    - chunks (list of str): 번역할 텍스트 청크 리스트
+    - chatmodel (str): 사용할 OpenAI 챗 모델
+    Return:
+    - str: 번역된 전체 텍스트
+    """    
+    translated_chunks = []
+    
+    for chunk in chunks :
+        if language == "ko":
+            translated_chunk = translate_to_korean(chunk, chatmodel)
+            translated_chunks.append(translated_chunk)
+        else:
+            translated_chunk = translate_to_english(chunk, chatmodel)
+            translated_chunks.append(translated_chunk)
+        
+    return "".join(translated_chunks)
+
+# 전체 텍스트를 청크로 나누고, 각 청크를 순차적으로 번역한 후 이어 붙이는 과정을 진행
+    
 
 def translate_to_korean(text, chatmodel):
+    
+    # 각 청크를 번역한 다음, 결과를 합치는 역할
     """
     Description: OpenAI API를 사용하여 영어 텍스트를 한국어로 번역합니다.
     Argument:
@@ -30,17 +83,18 @@ def translate_to_korean(text, chatmodel):
     - chatmodel (str): 사용할 OpenAI 챗 모델
     Return:
     - str: 번역된 한국어 텍스트
-    """
+    """    
     response = openai.chat.completions.create(
         model=chatmodel,
         messages=[
-            {"role": "system", "content": "Translate the following English text to Korean:"},
+            {"role": "system", "content": "Translate the every following English text into Korean perfectly without summarizing:"},
             {"role": "user", "content": text}
         ]
     )
     response_text = response.choices[0].message.content
-
+    
     return response_text
+    
 
 
 def translate_to_english(text, chatmodel):
@@ -55,7 +109,7 @@ def translate_to_english(text, chatmodel):
     response = openai.chat.completions.create(
         model=chatmodel,
         messages=[
-            {"role": "system", "content": "Translate the following Korean text to English:"},
+            {"role": "system", "content": "Translate the every following Korean text into English perfectly without summarizing:"},
             {"role": "user", "content": text}
         ]
     )
@@ -128,26 +182,30 @@ if __name__ == "__main__":
         "English": ["Injection Molding"]
     }
 
+    os.environ["OPENAI_API_KEY"] = Credential.OPENAI_API_KEY
+    chatmodel = Model.CHAT_MODEL
+
     
-    OPENAI_API_KEY = "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"
-    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-    chatmodel = "gpt-3.5-turbo"
-
- 
-
     for language, keywords in TopicKeywords.items():
         for keyword in keywords:
+            
             data = get_wikipedia_content(keyword, "en" if language == "English" else "ko")
             
+            print(f"Translating content for '{keyword}'...")
+            
+            ##################### 전체 텍스트를 청크로 나눔 #####################
+            chunks = chunk_text(data["OriginalContent"])
+            
+            # 청크를 번역
             if language == "English":
-                translated_content = translate_to_korean(data["OriginalContent"], chatmodel)
-                data["Translated Content"] = translated_content
-           
+                translated_chunks = [translate_to_korean(chunk, chatmodel) for chunk in chunks]
             else:
-                translated_content = translate_to_english(data["OriginalContent"], chatmodel)
-                data["Translated Content"] = translated_content
-                
-                
+                translated_chunks = [translate_to_english(chunk, chatmodel) for chunk in chunks]
+            
+            # 번역된 청크들을 합침
+            translated_content = "".join(translated_chunks)
+            data["Translated Content"] = translated_content
+            
             directory = os.path.join("Wikipedia_Content", keyword.replace(" ", "_"))
             filename = f"{keyword}_wikipedia_content.json"
             save_data_to_json(data, directory, filename)
